@@ -41,7 +41,7 @@ ZooKeeper 通常被用于实现诸如数据发布/订阅、负载均衡、命名
 
 Socket 是一个抽象概念，应用程序可以通过它发送或接收数据。套接字是 IP 地址与端口的组合：
 $$
- Socket=（IP 地址：端口号）
+Socket=（IP 地址：端口号）
 $$
 在 Java 开发中使用 Socket 时会常用到两个类，都在 `java.net` 包中：
 
@@ -85,22 +85,50 @@ Socket 网络通信过程如下图所示：
 
 #### Netty
 
-介绍：
+##### 基础知识
+
+**介绍：**
 
 1. **Netty 是一个基于 NIO 的 client-server(客户端服务器)框架，使用它可以快速简单地开发网络应用程序。**
 2. 它极大地简化并简化了 TCP 和 UDP 套接字服务器等网络编程,并且性能以及安全性等很多方面甚至都要更好。
 3. 支持多种协议如 FTP，SMTP，HTTP 以及各种二进制和基于文本的传统协议
 
-使用场景：
+**使用场景：**
 
 - 作为 RPC 框架的网络通信工具
 - 实现一个自己的 HTTP 服务器 
 - 实现一个即时通讯系统
 - 消息推送系统
 
+**管道和通道：**
 
+- Channel 表示一个网络通道，它负责在客户端和服务器之间进行数据的读写操作
+- ChannelPipeline 是一个处理器链，它由一系列的 `ChannelHandler` （可以自定义）组成，用于处理进出 `Channel` 的事件和数据。每个 `Channel` 都有自己的ChannelPipeline ，可以对数据进行解码、编码、处理等操作。
 
 `.handler()`方法用于设置一些针对于整个Channel的处理器，这些处理器通常在Channel的生命周期中只需要设置一次。因此，Netty提供了两个方法用于设置处理器，分别是`.handler()`和`.childHandler()`。其中，`.handler()`方法设置的处理器是针对ServerBootstrap所创建的ServerChannel的，而`.childHandler()`方法设置的处理器是针对ServerBootstrap所接受的连接的Channel的。
+
+##### 工作原理
+
+Netty入门：https://blog.csdn.net/S1124654/article/details/125489407
+
+<img src="https://img-blog.csdnimg.cn/5acd384830574aa69f7a2e57fe3f6867.webp" alt="img" style="zoom:67%;" />
+
+说明如下：
+
+1. Netty抽象出两组线程池： BossGroup 专门负责接收客户端的连接, WorkerGroup 专门负责网络的读写。BossGroup 和 WorkerGroup 类型都是 NioEventLoopGroup
+2. NioEventLoopGroup 相当于一个事件循环组, 这个组中含有多个事件循环 ，每一个事件循环是 NioEventLoop
+3. NioEventLoop 表示一个不断循环的执行处理任务的线程， 每个NioEventLoop 都有一个selector , 用于监听绑定在其上的socket的网络通讯
+4. NioEventLoopGroup 可以有多个线程, 即可以含有多个NioEventLoop
+5. 每个Boss NioEventLoop 循环执行的步骤有3步
+   - 轮询accept 事件
+   - 处理accept 事件 , 与client建立连接 , 生成NioScocketChannel , 并将其注册到某个worker NIOEventLoop 上的 selector
+   - 处理任务队列的任务 ， 即 runAllTasks
+6. 每个 Worker NIOEventLoop 循环执行的步骤
+   - 轮询read, write 事件
+   - 处理i/o事件， 即read , write 事件，在对应NioScocketChannel 处理
+   - 处理任务队列的任务 ， 即 runAllTasks
+7. 每个Worker NIOEventLoop 处理业务时，会使用pipeline(管道), pipeline 中包含了 channel , 即通过pipeline 可以获取到对应通道, 管道中维护了很多的 处理器
+   
 
 
 
