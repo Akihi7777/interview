@@ -130,7 +130,15 @@ Netty入门：https://blog.csdn.net/S1124654/article/details/125489407
 7. 每个Worker NIOEventLoop 处理业务时，会使用pipeline(管道), pipeline 中包含了 channel , 即通过pipeline 可以获取到对应通道, 管道中维护了很多的 处理器
    
 
+##### ByteBuf类
 
+**工作原理：**
+
+ByteBuf维护了两个不同的索引：一个用于**读取**，一个用于写入。当你从ByteBuf读取时，它的readerIndex将会被递增已经被读取的字节数。同样地，当你写入ByteBuf时，它的writerIndex也会被递增。
+
+<img src="https://img2020.cnblogs.com/blog/780676/202008/780676-20200828161154230-1122648307.png" alt="img" style="zoom:80%;" />
+
+名称以 `set `或者 `get `开头的ByteBuf方法，将会推进其对应的索引，而名称以set或者get开关的操作则不会。
 
 ### 序列化和反序列化
 
