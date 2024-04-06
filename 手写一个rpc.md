@@ -31,6 +31,8 @@
 
 ZooKeeper 通常被用于实现诸如数据发布/订阅、负载均衡、命名服务、分布式协调/通知、集群管理、Master 选举、分布式锁和分布式队列等功能。并且，ZooKeeper 将数据保存在`内存`中，性能是非常棒的。 在`“读”多于“写”`的应用程序中尤其地高性能，因为“写”会导致所有的服务器间同步状态。（“读”多于“写”是协调服务的典型场景）。
 
+
+
 ### 网络传输
 
 网络传输即**发送网络请求来传递目标类和方法的信息以及方法的参数等数据到服务提供端**，本项目使用Netty做网络传输，常用的还有Socket和NIO。
@@ -189,11 +191,148 @@ Kryo 是一个高性能的序列化/反序列化工具，由于其变长存储�
 
 使用代理对象来代替对真实对象的访问，这样就可以在**不修改原目标对象**的前提下，提供额外的功能操作，扩展目标对象的功能。
 
-- **主要作用：**
+**主要作用：**
 
-扩展目标对象的功能，比如说在目标对象的某个方法执行前后你可以增加一些自定义的操作。
+1. 提供一种间接访问方式，以便于控制对真实对象的访问。
+2. 扩展目标对象的功能，比如说在目标对象的某个方法执行前后你可以增加一些自定义的操作（重写invoke时添加代码）。
 
+使用场景：
 
+|                     |                                                              |
+| :------------------ | :----------------------------------------------------------- |
+| AOP（面向切面编程） | Spring的AOP功能也是基于代理模式实现的。通过定义切点和切面，代理对象可以在目标对象的方法执行前后插入额外的横切逻辑，如日志记录、性能监控、安全验证等。 |
+| 事务管理            | Spring的事务管理功能通常使用代理模式来实现。通过在业务方法前后添加事务管理的逻辑，代理对象可以控制事务的开始、提交或回滚，并提供了对事务的管理和控制。 |
+
+#### 静态代理
+
+静态代理中，对目标对象的每个方法的增强都是手动完成的，比如接口一旦新增加方法，目标对象和代理对象都要进行修改，需要对每个目标类都单独写一个代理类。从 JVM 层面来说， 静态代理在**编译时**就将接口、实现类、代理类这些都变成了一个个实际的 class 文件。
+
+**实现步骤：**
+
+1. 定义一个接口及其实现类；
+2. 创建一个代理类同样实现这个接口
+3. 将目标对象注入进代理类，然后在代理类的对应方法调用目标类中的对应方法。
+
+#### 动态代理
+
+动态代理不需要针对每个目标类都单独创建一个代理类，并且也不需要必须实现接口，可以直接代理实现类。从 JVM 角度来说，动态代理是在运行时动态生成类字节码，并加载到 JVM 中的。
+
+##### **JDK 动态代理**
+
+1. **介绍**
+
+在 Java 动态代理机制中 `InvocationHandler` 接口和 `Proxy` 类是核心。
+
+`Proxy` 类中使用频率最高的方法是：`newProxyInstance()` ，这个方法主要用来生成一个代理对象。
+
+```java
+    public static Object newProxyInstance(ClassLoader loader, //接口的类加载器
+                                          Class<?>[] interfaces, //接口
+                                          InvocationHandler h)
+        throws IllegalArgumentException
+    {
+        ......
+    }
+```
+
+因此，还需要实现InvocationHandler 来自定义处理逻辑。 当我们的动态代理对象调用一个方法时候，这个方法的调用就会被转发到实现InvocationHandler 接口类的 `invoke()`来调用。也就是说：**通过**Proxy **类的** newProxyInstance() **创建的代理对象在调用方法的时候，实际会调用到实现**InvocationHandler 接口的类的 `invoke()`**方法。**
+
+2. **使用步骤**
+   1. 定义一个接口及其实现类；
+   2. 实现 InvocationHandler 并重写`invoke`方法，该方法在代理对象调用方法时**被触发**，在 `invoke` 方法中我们会调用原生方法（被代理类的方法）并自定义一些处理逻辑；
+   3. 通过 `Proxy.newProxyInstance(ClassLoader loader,Class<?>[] interfaces,InvocationHandler h)` 方法创建代理对象；
+
+- **整体实例：**
+
+```java
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+
+// 定义接口
+interface UserService {
+    void addUser(String username);
+}
+
+// 实现接口的具体类
+class UserServiceImpl implements UserService {
+    public void addUser(String username) {
+        System.out.println("添加用户：" + username);
+    }
+}
+
+// 实现InvocationHandler接口
+class MyInvocationHandler implements InvocationHandler {
+    private Object target;
+
+    public MyInvocationHandler(Object target) {
+        this.target = target;
+    }
+
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        System.out.println("动态代理前置操作");
+        Object result = method.invoke(target, args);
+        System.out.println("动态代理后置操作");
+        return result;
+    }
+}
+
+public class DynamicProxyExample {
+    public static void main(String[] args) {
+        // 创建目标对象
+        UserService userService = new UserServiceImpl();
+
+        // 创建InvocationHandler实例
+        MyInvocationHandler handler = new MyInvocationHandler(userService);
+
+        // 创建动态代理对象
+        UserService proxy = (UserService) Proxy.newProxyInstance(
+                userService.getClass().getClassLoader(),
+                userService.getClass().getInterfaces(),
+                handler
+        );
+
+        // 通过代理对象调用方法
+        proxy.addUser("Alice");
+    }
+}
+```
+
+3. **缺陷**
+
+JDK 动态代理有一个最致命的问题是其只能代理**实现了接口的类**，可以用 CGLIB 动态代理机制来避免。例如，在Spring 中的 AOP 模块中：如果目标对象实现了接口，则默认采用 JDK 动态代理，否则采用 CGLIB 动态代理，JDK 动态代理的效率更高。
+
+##### **CGLIB 动态代理**
+
+1. **介绍**
+
+在 CGLIB 动态代理机制中 `MethodInterceptor` 接口和 `Enhancer` 类是核心。
+
+需要自定义 `MethodInterceptor` 并重写 `intercept` 方法，`intercept` 用于拦截增强被代理类的方法。可以通过 `Enhancer`类来动态获取被代理类，当代理类调用方法的时候，实际调用的是 `MethodInterceptor` 中的 `intercept` 方法。
+
+```java
+public interface MethodInterceptor extends Callback{
+    // 拦截被代理类中的方法
+    public Object intercept(Object obj, java.lang.reflect.Method method, Object[] args,
+                               MethodProxy proxy) throws Throwable;
+} // obj :被代理的对象（需要增强的对象）   method :被拦截的方法（需要增强的方法）  
+  // args :方法入参     methodProxy :用于调用原始方法
+```
+
+2. **使用步骤**
+
+   1. 定义一个类，添加依赖 cglib；
+
+   2. 实现 `MethodInterceptor` 并重写 `intercept` 方法，`intercept` 用于拦截增强被代理类的方法，和 JDK 动态代理中的 `invoke` 方法类似；
+
+   3. 通过 `Enhancer` 类的 `create()`创建代理类；
+
+#### 对比
+
+**静态代理和动态代理的对比：**
+
+1. **灵活性** ：动态代理更加灵活，不需要必须实现接口，可以直接代理实现类，并且可以不需要针对每个目标类都创建一个代理类。另外，静态代理中，接口一旦新增加方法，目标对象和代理对象都要进行修改，这是非常麻烦的！
+2. **JVM 层面** ：静态代理在编译时就将接口、实现类、代理类这些都变成了一个个实际的 class 文件。而动态代理是在运行时动态生成类字节码，并加载到 JVM 中的。
 
 ### 其他
 
