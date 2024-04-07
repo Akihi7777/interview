@@ -31,7 +31,120 @@
 
 ZooKeeper 通常被用于实现诸如数据发布/订阅、负载均衡、命名服务、分布式协调/通知、集群管理、Master 选举、分布式锁和分布式队列等功能。并且，ZooKeeper 将数据保存在`内存`中，性能是非常棒的。 在`“读”多于“写”`的应用程序中尤其地高性能，因为“写”会导致所有的服务器间同步状态。（“读”多于“写”是协调服务的典型场景）。
 
+#### ZooKeeper 
 
+##### 客户端 Curator
+
+通过 `CuratorFrameworkFactory` 创建 `CuratorFramework` 对象，然后再调用  `CuratorFramework` 对象的 `start()` 方法即可
+
+```java
+private static final int BASE_SLEEP_TIME = 1000;
+private static final int MAX_RETRIES = 3;
+
+// Retry strategy. Retry 3 times, and will increase the sleep time between retries.
+RetryPolicy retryPolicy = new ExponentialBackoffRetry(BASE_SLEEP_TIME, MAX_RETRIES);
+CuratorFramework zkClient = CuratorFrameworkFactory.builder()
+    // the server to connect to (can be a server list)
+    .connectString("127.0.0.1:2181")
+    .retryPolicy(retryPolicy)
+    .build();
+zkClient.start();
+```
+
+##### 节点
+
+1. **节点类型**
+
+   - **持久（PERSISTENT）节点** ：一旦创建就一直存在即使 ZooKeeper 集群宕机，直到将其删除。
+
+   - **临时（EPHEMERAL）节点** ：临时节点的生命周期是与 **客户端会话（session）** 绑定的，**会话消失则节点消失** 。并且，临时节点 **只能做叶子节点** ，不能创建子节点。
+
+   - **持久顺序（PERSISTENT_SEQUENTIAL）节点** ：除了具有持久（PERSISTENT）节点的特性之外， 子节点的名称还具有顺序性。比如 `/node1/app0000000001` 、`/node1/app0000000002` 。
+
+   - **临时顺序（EPHEMERAL_SEQUENTIAL）节点** ：除了具备临时（EPHEMERAL）节点的特性之外，子节点的名称还具有顺序性。
+
+2. **创建节点**
+
+父节点不存在的时候自动创建父节点：
+
+```java
+zkClient.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath("/node1/00001");
+```
+
+创建临时节点
+
+```java
+zkClient.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath("/node1/00001");
+```
+
+创建节点并指定数据内容
+
+```java
+zkClient.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath("/node1/00001","java".getBytes());
+zkClient.getData().forPath("/node1/00001");//获取节点的数据内容，获取到的是 byte数组
+```
+
+检测节点是否创建成功
+
+```java
+zkClient.checkExists().forPath("/node1/00001");//不为null的话，说明节点创建成功
+```
+
+3. **删除节点**
+
+删除一个子节点
+
+```java
+zkClient.delete().forPath("/node1/00001");
+```
+
+删除一个节点以及其下的所有子节点
+
+```java
+zkClient.delete().deletingChildrenIfNeeded().forPath("/node1");
+```
+
+获取/更新节点数据内容
+
+```java
+zkClient.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath("/node1/00001","java".getBytes());
+zkClient.getData().forPath("/node1/00001");//获取节点的数据内容
+zkClient.setData().forPath("/node1/00001","c++".getBytes());//更新节点数据内容
+```
+
+获取某个节点的所有子节点路径
+
+```java
+List<String> childrenPaths = zkClient.getChildren().forPath("/node1");
+```
+
+##### 监听器
+
+注册了监听器之后，这个节点的子节点发生变化比如增加、减少或者更新的时候，可以自定义回调操作。
+
+```java
+String path = "/node1";
+PathChildrenCache pathChildrenCache = new PathChildrenCache(zkClient, path, true);
+PathChildrenCacheListener pathChildrenCacheListener = (curatorFramework, pathChildrenCacheEvent) -> {
+    // do something
+};
+pathChildrenCache.getListenable().addListener(pathChildrenCacheListener);
+pathChildrenCache.start();
+```
+
+- **节点事件类型：**
+
+```java
+public static enum Type {
+        CHILD_ADDED,//子节点增加
+        CHILD_UPDATED,//子节点更新
+        CHILD_REMOVED,//子节点被删除
+        CONNECTION_SUSPENDED,
+        CONNECTION_RECONNECTED,
+        CONNECTION_LOST,
+        INITIALIZED;
+   }
+```
 
 ### 网络传输
 
@@ -82,7 +195,7 @@ Socket 网络通信过程如下图所示：
 
 ##### 局限
 
-1. `ServerSocket` 的 accept（） 方法是**阻塞方法**，也就是说 `ServerSocket` 在调用 accept（） 等待客户端的连接请求时会阻塞，直到收到客户端发送的连接请求才会继续往下执行代码。
+1. `ServerSocket` 的 accept () 方法是**阻塞方法**，也就是说 `ServerSocket` 在调用accept ()  等待客户端的连接请求时会阻塞，直到收到客户端发送的连接请求才会继续往下执行代码。
 2. 只能同时处理一个客户端的连接，如果需要管理多个客户端的话，就需要为我们请求的客户端单独创建一个线程。每次使用都创建线程会造成资源浪费，可以使用**线程池**，创建和回收的成本较低，并且可以指定最大线程数量。
 
 #### Netty
@@ -136,11 +249,47 @@ Netty入门：https://blog.csdn.net/S1124654/article/details/125489407
 
 **工作原理：**
 
-ByteBuf维护了两个不同的索引：一个用于**读取**，一个用于写入。当你从ByteBuf读取时，它的readerIndex将会被递增已经被读取的字节数。同样地，当你写入ByteBuf时，它的writerIndex也会被递增。
+ByteBuf维护了两个不同的索引：一个用于**读取**，一个用于**写入**。当你从ByteBuf读取时，它的readerIndex将会被递增已经被读取的字节数。同样地，当你写入ByteBuf时，它的writerIndex也会被递增。
 
 <img src="https://img2020.cnblogs.com/blog/780676/202008/780676-20200828161154230-1122648307.png" alt="img" style="zoom:80%;" />
 
 名称以 `set `或者 `get `开头的ByteBuf方法，将会推进其对应的索引，而名称以set或者get开关的操作则不会。
+
+#### 传输协议
+
+通过设计协议，我们定义需要传输哪些类型的数据， 并且还会规定每一种类型的数据应该占多少字节。这样我们在接收到二级制数据之后，就可以正确的解析出我们需要的数据。
+
+以下是设计的传输协议：
+
+<img src="C:\Users\汪思敏\AppData\Roaming\Typora\typora-user-images\image-20240407205445929.png" alt="image-20240407205445929" style="zoom:80%;" />
+
+- **魔法数** ： 通常是 4 个字节。这个魔数主要是为了筛选来到服务端的数据包，有了这个魔数之后，服务端首先取出前面四个字节进行比对，能够在第一时间识别出这个数据包并非是遵循自定义协议的，也就是无效数据包，为了安全考虑可以直接关闭连接以节省资源。
+- **序列化器类型** ：标识序列化的方式，比如是使用 Java 自带的序列化，还是 json，kyro 等序列化方式。
+- **消息长度** ： 运行时计算出来。
+
+
+
+#### 实现
+
+1. 定义 **RpcRequest.java**
+   - 包含了要调用的目标方法和类的名称、参数等数据
+
+2. 定义 **RpcResponse.java**
+   - 调用结果就通过 RpcResponse 返回给客户端
+
+3. 在Netty框架下实现。
+
+   - Netty 客户端主要实现了 **NettyClient.java**:
+
+     - doConnect() : 用于连接服务端（目标方法所在的服务器）并返回对应的 Channel。当我们知道了服务端的地址之后，我们就可以通过 NettyClient 成功连接服务端了。（有了 Channel 之后就能发送数据到服务端了）
+
+     - sendRpcRequest() : 用于传输 rpc 请求(RpcRequest) 到服务端。
+     - NettyClientHandler类：用于处理服务器发送的数据。
+
+   - Netty 服务端主要实现了 **NettyRpcServer.java**:
+     - NettyServerHandler类：用于处理客户端发送的数据。
+
+
 
 ### 序列化和反序列化
 
