@@ -146,6 +146,42 @@ public static enum Type {
    }
 ```
 
+#### 实现
+
+定义了两个接口 `ServiceDiscovery.java` 和 `ServiceRegistry.java`，分别是服务发现和服务注册行为。
+
+```java
+/**
+ * 服务注册
+ */
+public interface ServiceRegistry {
+    /**
+     * 注册服务到注册中心
+     * @param rpcServiceName    完整的服务名称（class name+group+version）
+     * @param inetSocketAddress 远程服务地址
+     */
+    void registerService(String rpcServiceName, InetSocketAddress inetSocketAddress);
+}
+/**
+ * 服务发现
+ */
+public interface ServiceDiscovery {
+    /**
+     * 根据 rpcServiceName 获取远程服务地址
+     * @return 远程服务地址
+     */
+    InetSocketAddress lookupService(String rpcServiceName);
+}
+```
+
+当我们的服务被注册进 zookeeper 的时候，我们将完整的服务名称 rpcServiceName （class name+group+version）作为根节点 ，子节点是对应的服务地址（ip+端口号）。
+
+一个根节点（rpcServiceName）可能会对应多个服务地址，如果我们要获得某个服务对应的地址的话，就直接根据完整的服务名称来获取到其下的所有子节点，然后通过具体的`负载均衡` 策略取出一个就可以了。
+
+<img src="C:\Users\汪思敏\AppData\Roaming\Typora\typora-user-images\image-20240408111934380.png" alt="image-20240408111934380" style="zoom: 33%;" />
+
+
+
 ### 网络传输
 
 网络传输即**发送网络请求来传递目标类和方法的信息以及方法的参数等数据到服务提供端**，本项目使用Netty做网络传输，常用的还有Socket和NIO。
@@ -267,7 +303,20 @@ ByteBuf维护了两个不同的索引：一个用于**读取**，一个用于**�
 - **序列化器类型** ：标识序列化的方式，比如是使用 Java 自带的序列化，还是 json，kyro 等序列化方式。
 - **消息长度** ： 运行时计算出来。
 
+#### 心跳检测
 
+心跳检测逻辑：服务端启动后，等待客户端连接，客户端连接之后，向服务端发送消息。如果客户端在线服务端必定会收到数据，如果客户端没在干活那么服务端接收不到客户端的消息。所以服务端检测一定时间内不活跃的客户端,将客户端连接关闭。Netty中自带了一个**IdleStateHandler** 可以用来实现心跳检测。
+
+```java
+public IdleStateHandler(
+            long readerIdleTime, long writerIdleTime, long allIdleTime,
+            TimeUnit unit)
+```
+
+- readerIdleTime：为读超时时间（即服务端一定时间内未接受到客户端消息）
+- writerIdleTime：为写超时时间（即服务端一定时间内向客户端发送消息）
+- allIdleTime：所有类型的超时时间
+- unit：时间单位
 
 #### 实现
 
