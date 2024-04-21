@@ -178,7 +178,7 @@ public interface ServiceDiscovery {
 
 一个根节点（rpcServiceName）可能会对应多个服务地址，如果我们要获得某个服务对应的地址的话，就直接根据完整的服务名称来获取到其下的所有子节点，然后通过具体的`负载均衡` 策略取出一个就可以了。
 
-<img src="C:\Users\汪思敏\AppData\Roaming\Typora\typora-user-images\image-20240408111934380.png" alt="image-20240408111934380" style="zoom: 33%;" />
+<img src="C:\Users\汪思敏\AppData\Roaming\Typora\typora-user-images\image-20240408111934380.png" alt="image-20240408111934380" style="zoom: 67%;" />
 
 
 
